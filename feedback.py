@@ -251,6 +251,8 @@ def main(filename, shard_size, min_text_length, process_raw_feedback):
 
     # for chunk in pd.read_csv(filename, header=0, dtype=dtypes, chunksize=shard_size, nrows=1000):
     for chunk in pd.read_csv(filename, header=0, dtype=dtypes, chunksize=shard_size):
+        # Replace NaN values with empty strings in the DataFrame
+        chunk.fillna('', inplace=True)
         # add a unique ID column to the input dataframe
         chunk['ID'] = chunk.reset_index().index
         df_list.append(chunk)
