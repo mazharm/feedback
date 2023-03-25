@@ -102,10 +102,10 @@ class OpenAICli:
 
         text = json.dumps(tuples)
         messages = p.get_prompt(text, PromptType.BATCH_ANALYZE)
+        prompt = self.get_prompt(messages)
 
         for i in range(10):
             try:
-                prompt = self.get_prompt(messages)
                 o_response = self.get_completion(prompt)
                 response = self.strip_extra_text(o_response)
 
@@ -120,7 +120,6 @@ class OpenAICli:
                     break
 
                 return json_response
-
             except Exception as _e:  # pylint: disable=broad-except
                 # most likely being rate limited gotta be patient
                 time.sleep(5 + 5 * i)
@@ -170,17 +169,17 @@ class OpenAICli:
         """
         text = json.dumps(tuples)
         messages = p.get_prompt(text, summary_type)
-        prompt = ""
-        response = ""
+        prompt = self.get_prompt(messages)
 
         for i in range(5):
             try:
-                prompt = self.get_prompt(messages)
                 response = self.get_completion(prompt)
+                #if summary_type is PromptType.CONSOLIDATE_TOP_QUOTES:
+                #    print(f"get_summary: Consolidate Quotes\n{prompt}\n{response}\n")
                 return response
             except Exception as _e:  # pylint: disable=broad-except
                 logging.error(
-                    "get_summary -- retry#{i}- Error: %s, prompt: %s", _e, prompt)
+                    "get_summary -- retry#%i- Error: %s, prompt: %s",i, _e, prompt)
                 logging.error("get_summary -- %s", traceback.format_exc())
                 # most likely being rate limited gotta be patient
                 time.sleep(5 * i)

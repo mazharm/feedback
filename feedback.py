@@ -25,11 +25,11 @@ dtypes = {'Workspace': str, 'Score': float,
 summary_dtypes = {'Workspace': str, 'Summary': str,
                   'Top Quotes': str, 'Action Items': str}
 
-"""
-workspaces = ['Accounts']
-"""
+
+workspaces = ['Enrollment']
 
 
+"""
 workspaces = ['Accounts',
               'Action Center',
               'Apis and Integration',
@@ -51,7 +51,7 @@ workspaces = ['Accounts',
               'Pricing',
               'Referrals',
               ]
-
+"""
 
 # Define the thoughtfulness score ranges and corresponding labels
 thoughtfulness_classfications = ['Thoughtful', 'Not Thoughtful']
@@ -116,7 +116,6 @@ def consolidate_summaries_df(d_f):
                                d_f['Top Quotes'][i:i+chunk_size],
                                d_f['Action Items'][i:i+chunk_size]))
                       for i in range(0, len(d_f), chunk_size)]
-    print(f"summaries_full: {len(summaries_full)}")
 
     summaries = []
     for chunk in summaries_full:
@@ -148,7 +147,6 @@ def summarize_df(d_f):
     # pick chunks of items summarize
     summaries_full = [list(d_f['Verbatim'][i:i+chunk_size], )
                       for i in range(0, len(d_f), chunk_size)]
-    print(f"summaries_full: {len(summaries_full)}")
 
     summaries = []
     for summary_chunk in summaries_full:

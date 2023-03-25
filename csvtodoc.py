@@ -32,14 +32,14 @@ class CSVtoDOCX:
         doc.add_heading(heading, 0)
 
         # loop through each row in the DataFrame
-        for row in _df.iterrows():
+        for idx, row in _df.iterrows(): # pylint: disable=unused-variable
 
             # add a section header
-            section_heading = row[sections_column]
+            section_heading = row.loc[sections_column]
             doc.add_heading(section_heading, level=1)
 
             # loop through each column in the row
-            for col_name, cell_value in row.items():
+            for col_name in _df.columns:
 
                 # skip the section column
                 if col_name == sections_column:
@@ -50,7 +50,7 @@ class CSVtoDOCX:
                 doc.add_heading(subsection_heading, level=2)
 
                 # replace '\n' characters with newlines and '[' and ']' with empty strings
-                cell_value = cell_value.replace(
+                cell_value = str(row[col_name]).replace(
                     '\\n', '\n').replace('[', '').replace(']', '')
 
                 # add the cell value as a paragraph
@@ -65,10 +65,12 @@ class CSVtoDOCX:
         return
 
 
+
 # pylint: disable=pointless-string-statement
 """
 This code in place if in case you want to run the tool
 as stand alone
+
 
 summary_dtypes = {'Workspace':str, 'Summary':str, 'Top Quotes':str, 'Action Items':str}
 
@@ -77,6 +79,6 @@ if __name__ == "__main__":
     csvtodocx = CSVtoDOCX()
     
     # convert the CSV file to a Word document
-    csvtodocx.convert(summary_dtypes, 'summary.csv', 'summary.docx', 
+    csvtodocx.convert(summary_dtypes, 'summaries.csv', 'summary.docx', 
                                 'NPS Feedback Summary', 'Workspace')
 """
