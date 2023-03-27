@@ -3,6 +3,7 @@ Tool to process NPS feedback
 """
 import argparse
 import logging
+import time
 from multiprocessing import Pool, cpu_count
 from datetime import datetime, timedelta, timezone
 import pandas as pd
@@ -478,7 +479,10 @@ if __name__ == "__main__":
                         help='Process the raw data over and above summarizing')
     args = parser.parse_args()
 
-    """
+    # Start the timer
+    start_time = time.time()
+
+
     # Process the Partner Center surveys data and generate two CSV files
     # raw scores, and summaries
     print("Processing Partner Center surveys...")
@@ -492,7 +496,6 @@ if __name__ == "__main__":
         args.process_raw_feedback,
         args.min_days_ago,
         args.max_days_ago)
-    """
 
     # Process the MSX surveys data and generate two CSV files
     # raw scores, and summaries
@@ -512,7 +515,6 @@ if __name__ == "__main__":
     converter = CSVtoDOCX(summary_dtypes, summary_columns,
                           WORKSPACE_OUTPUT)
 
-    """
     # Generate docx files from the CSV summary file for Partner Center
     print("Generating docx files for PC personas...")
     converter.convert(PC_SUMMARIES_OUTPUT_FILE,
@@ -527,7 +529,6 @@ if __name__ == "__main__":
                       MCPP_SUMMARIES_DOCX_OUTPUT_FILE,
                       MCPP_DOCX_TITLE,
                       MCPP_WORKSPACES)
-    """
 
     # Generate docx files from the CSV summary file for MSX
     print("Generating docx file for MSX personas...")
@@ -535,3 +536,9 @@ if __name__ == "__main__":
                       MSX_SUMMARIES_DOCX_OUTPUT_FILE,
                       MSX_DOCX_TITLE,
                       MSX_WORKSPACES)
+
+    end_time = time.time()
+
+    total_time = end_time - start_time
+    m, s = divmod(total_time, 60)
+    print(f"\n\nCompleted! - Total time taken: {m:.0f} minutes and {s:.2f} seconds")
