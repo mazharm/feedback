@@ -10,7 +10,7 @@ import re
 import openai
 from openai import Completion
 from better_profanity import profanity
-from prompt import Prompt, PromptType
+from prompt import Prompt, PromptType # pylint: disable=import-error
 
 p = Prompt()
 
@@ -18,7 +18,7 @@ class OpenAICli:
     """
     This class is used to interact with the OpenAI API
     """
-    temperature = 0.7
+    temperature = 0.0
     top_p = 0.95
     frequency_penalty = 0.0
     presence_penalty = 0.0
@@ -62,23 +62,27 @@ class OpenAICli:
 
         return prompt_str
 
-    def get_completion(self, text):
+    def get_completion(self, text, temperature, top_p):
         """
         Call the OAI API
         """
 
-        # print(f"Prompt:\n{text}\n\n")
+        #print(f"Prompt:\n{text}\n\n")
         response = Completion.create(
             engine=self.engine,
             prompt=text,
-            temperature=self.temperature,
-            top_p=self.top_p,
+            temperature=temperature,
+            top_p=top_p,
             frequency_penalty=self.frequency_penalty,
             presence_penalty=self.presence_penalty,
             max_tokens=self.max_tokens,
             stop=["<|im_end|>"])
-        # print (f"Reply:\n{response['choices'][0]['text'].strip()}")
-        # s = input("Press enter to continue...")
+        #print (f"Reply:\n{response['choices'][0]['text'].strip()}")
+
+        reply = response['choices'][0]['text'].strip()
+        if len(reply) < 128:
+            logging.error("Bad response from model: %s", reply)
+            raise Exception("model bad response") # pylint: disable=broad-exception-raised
 
         return response['choices'][0]['text'].strip()
 
@@ -104,9 +108,9 @@ class OpenAICli:
         messages = p.get_prompt(text, PromptType.BATCH_ANALYZE)
         prompt = self.get_prompt(messages)
 
-        for i in range(10):
+        for i in range(5):
             try:
-                o_response = self.get_completion(prompt)
+                o_response = self.get_completion(prompt, self.temperature+i*0.1, self.top_p+i*0.01)
                 response = self.strip_extra_text(o_response)
 
                 try:
@@ -173,9 +177,11 @@ class OpenAICli:
 
         for i in range(5):
             try:
-                response = self.get_completion(prompt)
-                #if summary_type is PromptType.CONSOLIDATE_TOP_QUOTES:
-                #    print(f"get_summary: Consolidate Quotes\n{prompt}\n{response}\n")
+                response = self.get_completion(prompt, self.temperature+i*0.1, self.top_p+i*0.01)
+                #if summary_type is PromptType.CONSOLIDATE_SUMMARY:
+                #    print("get_summary: Consolidating summaries")
+                #    print(f"get_summary: prompt:\n{prompt}\n")
+                #    print(f"get_summary: response:\n{response}\n")
                 return response
             except Exception as _e:  # pylint: disable=broad-except
                 logging.error(
@@ -186,4 +192,4 @@ class OpenAICli:
 
         print("get_summary -- Giving up after 5 retries")
 
-        return ""
+        return "Failed to generate summary"
