@@ -4,8 +4,9 @@ Tool to process NPS feedback
 import argparse
 import logging
 import time
-from multiprocessing import Pool, cpu_count
+import asyncio
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 from openaicli import OpenAICli  # pylint: disable=import-error
 from prompt import PromptType  # pylint: disable=import-error
@@ -361,29 +362,54 @@ def get_nps_surveys(filename, workspaces_filter, min_days_ago, max_days_ago):
 
     # Filter the dataframe based on workspaceName and timestamp
     filtered_df = _df[(_df[WORKSPACE_INPUT].isin(workspaces_filter)) &
-                     (pd.to_datetime(_df[TIMESTAMP]) >= start_days_ago) &
-                     (pd.to_datetime(_df[TIMESTAMP]) <= end_days_ago)]
+                      (pd.to_datetime(_df[TIMESTAMP]) >= start_days_ago) &
+                      (pd.to_datetime(_df[TIMESTAMP]) <= end_days_ago)]
 
     return filtered_df
 
 
-def main(input_filename,
-         raw_output_filename,
-         summaries_interim_output_filename,
-         summaries_output_filename,
-         workspaces_filter,
-         shard_size,
-         min_text_length,
-         process_raw_feedback,
-         min_days_ago,
-         max_days_ago):
+async def process_df_parallel(df_list, min_text_length, process_raw_feedback, workspaces_filter):
+    """
+    This function processes the dataframe to get the thoughtfulness classification and summary
+    """
+    with ThreadPoolExecutor() as executor:
+        _loop = asyncio.get_event_loop()
+        _tasks = [_loop.run_in_executor(executor, process_df,
+                                        df, min_text_length,
+                                        process_raw_feedback,
+                                        idx, workspaces_filter)
+                  for idx, df in enumerate(df_list)]
+        return await asyncio.gather(*_tasks)
+
+
+async def consolidate_summaries_parallel(workspace_df_list):
+    """
+    This function consolidates the summaries for a given workspace
+    """
+    with ThreadPoolExecutor() as executor:
+        _loop = asyncio.get_event_loop()
+        _tasks = [_loop.run_in_executor(executor, consolidate_summaries,
+                                        workspace, df)
+                  for workspace, df in workspace_df_list]
+        return await asyncio.gather(*_tasks)
+
+
+async def main(input_filename,
+               raw_output_filename,
+               summaries_interim_output_filename,
+               summaries_output_filename,
+               workspaces_filter,
+               shard_size,
+               min_text_length,
+               process_raw_feedback,
+               min_days_ago,
+               max_days_ago):
     """
     This function processes the CSV file and outputs the thoughtfulness scores and summaries
     """
-
     # Load the CSV file into a dataframe per filter
     _df = get_nps_surveys(input_filename, workspaces_filter,
-                          min_days_ago,max_days_ago)
+                          min_days_ago, max_days_ago)
 
     # group the rows by the specified column
     grouped_df = _df.groupby(WORKSPACE_INPUT)
@@ -404,11 +430,10 @@ def main(input_filename,
             df_list.append(chunk)
 
     # Process the shards of dataframes in parallel
-    with Pool(cpu_count()) as _p:
-        results = _p.starmap(
-            process_df, [(df, min_text_length, process_raw_feedback,
-                         idx, workspaces_filter)
-                         for idx, df in enumerate(df_list)])
+    results = await process_df_parallel(df_list,
+                                        min_text_length,
+                                        process_raw_feedback,
+                                        workspaces_filter)
 
     # results = [process_df(df, min_text_length, process_raw_feedback, idx)
     #            for idx, df in enumerate(df_list)]
@@ -437,15 +462,10 @@ def main(input_filename,
     print("Consolidating summaries...")
     df_summaries_full = pd.DataFrame(columns=summary_columns)
 
-    workspace_df_list = [(workspace,
-                        df_summaries[df_summaries[WORKSPACE_OUTPUT
-                        ] == workspace].copy())
-                        for workspace in workspaces_filter]
+    workspace_df_list = [(workspace, df_summaries[df_summaries[WORKSPACE_OUTPUT] == workspace
+                                                  ].copy()) for workspace in workspaces_filter]
 
-    # Process the summaries in parallel by workspace
-    with Pool(cpu_count()) as _p:
-        summary_results = _p.starmap(
-            consolidate_summaries, [(workspace, df) for workspace, df in workspace_df_list])
+    summary_results = await consolidate_summaries_parallel(workspace_df_list)
 
     # summary_results = [consolidate_summaries(workspace, df)
     #  for workspace, df in workspace_df_list]
@@ -460,6 +480,43 @@ def main(input_filename,
     df_summaries_full.to_csv(summaries_output_filename, index=False)
 
 
+async def main1(_args):
+    """
+    Wrapper function to call main
+    """
+    # Process the Partner Center surveys data and generate two CSV files
+    # raw scores, and summaries
+    print("Processing Partner Center surveys...")
+    await main(PC_SURVEYS_INPUT_FILE,
+               PC_RAW_OUTPUT_FILE,
+               PC_SUMMARIES_INTERIM_OUTPUT_FILE,
+               PC_SUMMARIES_OUTPUT_FILE,
+               PC_WORKSPACES,
+               _args.shard_size,
+               _args.min_length,
+               _args.process_raw_feedback,
+               _args.min_days_ago,
+               _args.max_days_ago)
+
+
+async def main2(_args):
+    """
+    Wrapper function to call main
+    """
+    # Process the MSX surveys data and generate two CSV files
+    # raw scores, and summaries
+    print("Processing MSX surveys...")
+    await main(MSX_SURVEYS_INPUT_FILE,
+               MSX_RAW_OUTPUT_FILE,
+               MSX_SUMMARIES_INTERIM_OUTPUT_FILE,
+               MSX_SUMMARIES_OUTPUT_FILE,
+               MSX_WORKSPACES,
+               _args.shard_size,
+               _args.min_length,
+               _args.process_raw_feedback,
+               _args.min_days_ago,
+               _args.max_days_ago)
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -467,13 +524,13 @@ if __name__ == "__main__":
                         type=int, default=DEFAULT_SHARD_SIZE,
                         help='Shard size for parallel processing')
     parser.add_argument('-m', '--min-length', type=int,
-                         default=DEFAULT_MIN_TEXT_LENGTH,
+                        default=DEFAULT_MIN_TEXT_LENGTH,
                         help='Min length of feedback text required to considered for analysis')
     parser.add_argument('--min-days-ago', type=int,
-                         default=0,
+                        default=0,
                         help='Number of days ago to start processing (newest)')
     parser.add_argument('--max-days-ago', type=int,
-                         default=30,
+                        default=30,
                         help='Number of days ago to end processing (oldest)')
     parser.add_argument('-r', '--process-raw-feedback', action='store_true', default=False,
                         help='Process the raw data over and above summarizing')
@@ -482,34 +539,10 @@ if __name__ == "__main__":
     # Start the timer
     start_time = time.time()
 
-
-    # Process the Partner Center surveys data and generate two CSV files
-    # raw scores, and summaries
-    print("Processing Partner Center surveys...")
-    main(PC_SURVEYS_INPUT_FILE,
-        PC_RAW_OUTPUT_FILE,
-        PC_SUMMARIES_INTERIM_OUTPUT_FILE,
-        PC_SUMMARIES_OUTPUT_FILE,
-        PC_WORKSPACES,
-        args.shard_size,
-        args.min_length,
-        args.process_raw_feedback,
-        args.min_days_ago,
-        args.max_days_ago)
-
-    # Process the MSX surveys data and generate two CSV files
-    # raw scores, and summaries
-    print("Processing MSX surveys...")
-    main(MSX_SURVEYS_INPUT_FILE,
-        MSX_RAW_OUTPUT_FILE,
-        MSX_SUMMARIES_INTERIM_OUTPUT_FILE,
-        MSX_SUMMARIES_OUTPUT_FILE,
-        MSX_WORKSPACES,
-        args.shard_size,
-        args.min_length,
-        args.process_raw_feedback,
-        args.min_days_ago,
-        args.max_days_ago)
+    loop = asyncio.get_event_loop()
+    tasks = [loop.create_task(main1(args)), loop.create_task(main2(args))]
+    loop.run_until_complete(asyncio.gather(*tasks))
+    loop.close()
 
     print("Creating summaries.docx...")
     converter = CSVtoDOCX(summary_dtypes, summary_columns,
@@ -541,4 +574,5 @@ if __name__ == "__main__":
 
     total_time = end_time - start_time
     m, s = divmod(total_time, 60)
-    print(f"\n\nCompleted! - Total time taken: {m:.0f} minutes and {s:.2f} seconds")
+    print(
+        f"\n\nCompleted! - Total time taken: {m:.0f} minutes and {s:.2f} seconds")
